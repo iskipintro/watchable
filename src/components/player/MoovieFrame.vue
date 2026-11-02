@@ -851,6 +851,7 @@ export default defineComponent({
         backdropPath: { type: String, default: '' },
         posterPath: { type: String, default: '' },
         audioMode: { type: String as () => 'sub' | 'dub', default: 'sub' },
+        anilistId: { type: [String, Number], default: 0 },
     },
     emits: ['next-episode', 'prev-episode', 'embed-change'],
     setup(props, ctx) {
@@ -1358,32 +1359,33 @@ export default defineComponent({
 
         const STREAMLY_GENERAL_SERVERS = [
             { id: 'poseidon', name: 'Itachi' },
-            { id: 'salem_hls', name: 'Madara' },
+            { id: 'stellar_hls', name: 'Aomine' },
             { id: 'vixsrc_hls', name: 'Obito' },
-            { id: 'movienight_auto', name: 'Minato' },
-            { id: 'shiopa_hls', name: 'Eren' },
-            { id: 'cinejoy_nebula', name: 'Mikasa' },
-            { id: 'stellar_hls', name: 'Gojo' },
-            { id: 'stellar_miami', name: 'Sukuna' },
-            { id: 'orion', name: 'Kakashi' },
+            { id: 'salem_hls', name: 'Madara' },
             { id: 'purstream', name: 'Sasuke' },
-            { id: 'atlantia', name: 'Tanjiro' },
-            { id: 'rive_vanguard', name: 'Zoro' },
             { id: 'rive_citadel', name: 'Luffy' },
-            { id: 'cinejoy_hls', name: 'Hashirama' },
-            { id: 'cinejoy_lisbon', name: 'Naruto' },
+            { id: 'rive_vanguard', name: 'L' },
+            { id: 'atlantia', name: 'Tanjiro' },
+            { id: 'movienight_auto', name: 'Minato' },
+            { id: 'cinejoy_nebula', name: 'Mikasa' },
             { id: 'vidzee', name: 'Killua' },
+            { id: 'orion', name: 'Kakashi' },
+            { id: 'stellar_miami', name: 'Sukuna' },
+            { id: 'cinejoy_lisbon', name: 'Naruto' },
+            { id: 'cinejoy_hls', name: 'Hashirama' },
+            { id: 'shiopa_hls', name: 'Eren' },
         ]
 
         const STREAMLY_ANIME_SERVERS = [
             { id: 'miruro_anime', name: 'Shisui' },
+            { id: 'kazo_anime', name: 'Female Titan' },
             { id: 'kaa_anime', name: 'Yuji' },
-            { id: 'kazo_anime', name: 'Megumi' },
+            { id: 'animeparadise', name: 'AnimeParadise' },
             { id: 'kyoo_anime', name: 'Toji' },
-            { id: 'juju_anime', name: 'Nobara' },
+            { id: 'juju_anime', name: 'Levi' },
             { id: 'lufi_anime', name: 'Goku' },
             { id: 'poseidon_anime', name: 'Itachi Anime' },
-            { id: 'animeparadise', name: 'Saitama' },
+            { id: 'orion_anime', name: 'Tengen' },
         ]
 
         async function loadEnabledProviderList(): Promise<ProviderStatus[]> {
@@ -2891,6 +2893,7 @@ export default defineComponent({
                 })
                 if (props.season > 0) query.set('season', String(props.season))
                 if (props.episode > 0) query.set('episode', String(props.episode))
+                if (props.anilistId) query.set('anilistId', String(props.anilistId))
 
                 const ctrl = new AbortController()
                 const timeout = setTimeout(() => ctrl.abort(), 12000)

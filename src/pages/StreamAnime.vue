@@ -27,6 +27,7 @@
             <MoovieFrame
                 ref="frameRef"
                 :media-id="animeId"
+                :anilist-id="anilistIdRef || animeId"
                 media-type="anime"
                 :season="activeTmdbSeason"
                 :episode="currentEpisode"
@@ -1285,7 +1286,8 @@ export default defineComponent({
             inWatchlist,
             toggleWatchlist,
             isFullscreen,
-            toggleFullscreen
+            toggleFullscreen,
+            anilistIdRef
         };
     }
 });

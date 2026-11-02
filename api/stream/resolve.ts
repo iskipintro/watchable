@@ -73,10 +73,10 @@ var ALL_STREAM_SERVERS = [
   },
   {
     id: "stellar_hls",
-    name: "Gojo",
-    badge: "Multi-Sub",
+    name: "Aomine",
+    badge: "4K UHD Master",
     category: "general",
-    desc: "Lightning-fast direct native stream with multi-language subtitles",
+    desc: "CineBros direct 4K/1080p HLS stream with multi-language subtitle tracks",
     isNativeHLS: true,
     getMovieUrl: (id) => `https://stellar.gdn/watch/movie/${id}`,
     getTVUrl: (id, s = 1, e = 1) => `https://stellar.gdn/watch/tv/${id}?s=${s}&e=${e}`
@@ -124,10 +124,10 @@ var ALL_STREAM_SERVERS = [
   },
   {
     id: "rive_vanguard",
-    name: "Zoro",
-    badge: "Fast Stream",
+    name: "L",
+    badge: "4K UHD Master",
     category: "general",
-    desc: "Direct stream (<400ms)",
+    desc: "Rivestream Vanguard high-bitrate 1080p / 4K UHD Master stream",
     isNativeHLS: true,
     getMovieUrl: (id) => `https://autoembed.co/movie/tmdb/${id}`,
     getTVUrl: (id, s = 1, e = 1) => `https://autoembed.co/tv/tmdb/${id}/${s}/${e}`
@@ -198,10 +198,10 @@ var ALL_STREAM_SERVERS = [
   },
   {
     id: "kazo_anime",
-    name: "Megumi",
-    badge: "Multi-Sub",
+    name: "Female Titan",
+    badge: "Dub & Sub",
     category: "anime",
-    desc: "Direct native stream with Dual Audio & 8+ subtitle languages",
+    desc: "Kazora Female Titan cluster stream with OP/ED skip intervals & 8+ subtitle tracks",
     isNativeHLS: true,
     supportsDualAudio: true,
     getMovieUrl: (id) => `https://autoembed.co/movie/tmdb/${id}`,
@@ -212,7 +212,7 @@ var ALL_STREAM_SERVERS = [
     name: "Toji",
     badge: "Dual Audio",
     category: "anime",
-    desc: "Lightning-fast native anime stream with dual audio",
+    desc: "Kazora Toji cluster stream with dual audio",
     isNativeHLS: true,
     supportsDualAudio: true,
     getMovieUrl: (id) => `https://autoembed.co/movie/tmdb/${id}`,
@@ -220,10 +220,10 @@ var ALL_STREAM_SERVERS = [
   },
   {
     id: "juju_anime",
-    name: "Nobara",
+    name: "Levi",
     badge: "Multi-Sub",
     category: "anime",
-    desc: "Instant native anime stream with multi-language subtitle tracks",
+    desc: "Kazora Levi cluster stream with multi-language subtitle tracks",
     isNativeHLS: true,
     supportsDualAudio: true,
     getMovieUrl: (id) => `https://autoembed.co/movie/tmdb/${id}`,
@@ -234,7 +234,7 @@ var ALL_STREAM_SERVERS = [
     name: "Goku",
     badge: "Dub & Sub",
     category: "anime",
-    desc: "High-speed alternative native anime stream",
+    desc: "Kazora Goku cluster stream with Dub & Sub",
     isNativeHLS: true,
     supportsDualAudio: true,
     getMovieUrl: (id) => `https://autoembed.co/movie/tmdb/${id}`,
@@ -263,10 +263,10 @@ var ALL_STREAM_SERVERS = [
   },
   {
     id: "animeparadise",
-    name: "Saitama",
-    badge: "Sub Only",
+    name: "AnimeParadise",
+    badge: "Crunchyroll",
     category: "anime",
-    desc: "High-quality master anime stream with Japanese audio and clean English subtitles",
+    desc: "Crunchyroll raw master stream with clean subtitles and built-in OP/ED skip intervals",
     isNativeHLS: true,
     supportsDualAudio: false,
     getMovieUrl: (id) => `https://autoembed.co/movie/tmdb/${id}`,
@@ -430,7 +430,7 @@ async function resolveRivestreamProvider(provider, tmdbId, type = "movie", seaso
     const subtitles = captions.filter((c) => Boolean(c.file)).map((c) => ({
       label: c.label || c.language || "English",
       lang: (c.language || "en").toLowerCase().slice(0, 2),
-      url: c.file,
+      url: `/api/stream/proxy?url=${encodeURIComponent(c.file)}&referer=${encodeURIComponent("https://www.rivestream.app/")}&origin=${encodeURIComponent("https://www.rivestream.app")}`,
       default: (c.label || c.language || "").toLowerCase().includes("english")
     }));
     let proxiedStreamUrl = rawStreamUrl;
@@ -456,8 +456,10 @@ async function resolveRivestreamProvider(provider, tmdbId, type = "movie", seaso
         }
       } catch {
       }
-    } else if (rawStreamUrl.includes("img1.fcxmb.com") || rawStreamUrl.includes("fcxmb.com")) {
-      proxiedStreamUrl = rawStreamUrl;
+    } else if (rawStreamUrl && rawStreamUrl.startsWith("http") && !rawStreamUrl.startsWith("/api/stream/proxy")) {
+      proxiedStreamUrl = `/api/stream/proxy?url=${encodeURIComponent(
+        rawStreamUrl
+      )}&referer=${encodeURIComponent("https://www.rivestream.app/")}&origin=${encodeURIComponent("https://www.rivestream.app")}`;
     }
     return {
       success: true,
@@ -604,6 +606,42 @@ async function resolveAnimeParadise(title, episode = 1) {
   }
 }
 async function resolveVidZee(tmdbId, type = "movie", season = 1, episode = 1) {
+  // 1. Try POST https://core.vidzee.wtf/streams as documented in the Streaming Servers API Guide
+  try {
+    const postRes = await fetch(VIDZEE_API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...VIDZEE_HEADERS
+      },
+      body: JSON.stringify({
+        tmdbId: String(tmdbId),
+        type: type === "tv" ? "tv" : "movie",
+        season: Number(season) || 1,
+        episode: Number(episode) || 1
+      }),
+      signal: AbortSignal.timeout(4000)
+    });
+    if (postRes.ok) {
+      const data = await postRes.json();
+      const rawUrl = data?.url || data?.data?.url || data?.stream || data?.data?.stream || data?.streams?.[0]?.url;
+      if (rawUrl && typeof rawUrl === "string" && rawUrl.startsWith("http")) {
+        const proxied = `/api/stream/proxy?url=${encodeURIComponent(
+          rawUrl
+        )}&referer=${encodeURIComponent("https://player.vidzee.wtf/")}&origin=${encodeURIComponent("https://player.vidzee.wtf")}`;
+        return {
+          success: true,
+          server: "vidzee",
+          streamUrl: proxied,
+          rawUrl,
+          quality: "1080p FastCloud HLS",
+          subtitles: data?.subtitles || data?.data?.subtitles || []
+        };
+      }
+    }
+  } catch {}
+
+  // 2. Fallback to GET subservers
   const subServers = ["dcloud", "ipcloud", "tik"];
   const path3 = type === "movie" ? `movie/${tmdbId}` : `tv/${tmdbId}/${season}/${episode}`;
   for (const s of subServers) {
@@ -618,7 +656,7 @@ async function resolveVidZee(tmdbId, type = "movie", season = 1, episode = 1) {
       if (data?.url && typeof data.url === "string" && data.url.startsWith("http")) {
         const proxied = `/api/stream/proxy?url=${encodeURIComponent(
           data.url
-        )}&referer=${encodeURIComponent("https://player.vidzee.wtf/")}`;
+        )}&referer=${encodeURIComponent("https://player.vidzee.wtf/")}&origin=${encodeURIComponent("https://player.vidzee.wtf")}`;
         return {
           success: true,
           server: "vidzee",
@@ -636,6 +674,216 @@ async function resolveVidZee(tmdbId, type = "movie", season = 1, episode = 1) {
     server: "vidzee",
     error: "No active stream found in VidZee cluster"
   };
+}
+
+// ─── CineBros API Scraper (Aomine - stellar_hls) ───
+async function resolveCineBrosStream(tmdbId, type = "movie", season = 1, episode = 1) {
+  try {
+    const isTv = type === "tv";
+    const referer = isTv ? `https://cinebros.net/watch/tv/${tmdbId}` : `https://cinebros.net/watch/movie/${tmdbId}`;
+    const url = `https://cinebros.net/api/streams?tmdbId=${tmdbId}&type=${type}&seasonId=${season}&episodeId=${episode}`;
+    const res = await fetch(url, {
+      headers: {
+        Referer: referer,
+        Origin: "https://cinebros.net",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36"
+      },
+      signal: AbortSignal.timeout(10000)
+    });
+    if (!res.ok) return null;
+    const text = await res.text();
+    const rawLines = text.split("\n").map((l) => l.trim()).filter(Boolean);
+    const streams = [];
+    const allCaptions = [];
+    for (const line of rawLines) {
+      try {
+        const parsed = JSON.parse(line);
+        if (parsed.url) streams.push(parsed);
+        if (parsed.captions && Array.isArray(parsed.captions)) {
+          allCaptions.push(...parsed.captions);
+        }
+      } catch {}
+    }
+    if (!streams.length) return null;
+    streams.sort((a, b) => (b.quality || 0) - (a.quality || 0));
+    const best = streams[0];
+    const subtitles = allCaptions.map((c) => ({
+      label: c.display || c.language || "English",
+      lang: c.language || "en",
+      url: c.url,
+      default: (c.display || c.language || "").toLowerCase().includes("english")
+    }));
+    return {
+      success: true,
+      server: "stellar_hls",
+      serverName: `Aomine (${best.name || best.quality + "p"})`,
+      mode: "hls",
+      streamUrl: best.url,
+      rawUrl: best.url,
+      quality: best.quality ? `${best.quality}p` : "1080p Master HLS",
+      subtitles,
+      is4k: (best.quality || 0) >= 2160
+    };
+  } catch (err) {
+    console.error("[CineBros] Stream resolution error:", err);
+    return null;
+  }
+}
+
+// ─── AniList ID Resolver ───
+const anilistTitleCache = new Map();
+async function resolveAnilistId(title, idHint) {
+  if (idHint && Number(idHint) > 0 && Number(idHint) < 500000) {
+    return Number(idHint);
+  }
+  const cleanTitle = (title || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/ū/gi, "u")
+    .replace(/ō/gi, "o")
+    .replace(/Shippūden/gi, "Shippuden")
+    .replace(/\(.*?\)/g, "")
+    .replace(/\[.*?\]/g, "")
+    .replace(/Season \d+/i, "")
+    .replace(/Part \d+/i, "")
+    .trim();
+  if (cleanTitle) {
+    const cacheKey = cleanTitle.toLowerCase();
+    if (anilistTitleCache.has(cacheKey)) {
+      return anilistTitleCache.get(cacheKey);
+    }
+    try {
+      const gqlQuery = `query ($search: String) {
+        Media (search: $search, type: ANIME) {
+          id
+        }
+      }`;
+      const res = await fetch("https://graphql.anilist.co", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: gqlQuery, variables: { search: cleanTitle } }),
+        signal: AbortSignal.timeout(3000)
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.data?.Media?.id) {
+          anilistTitleCache.set(cacheKey, json.data.Media.id);
+          return json.data.Media.id;
+        }
+      }
+    } catch {}
+  }
+  if (idHint && !isNaN(Number(idHint))) {
+    return Number(idHint);
+  }
+  return null;
+}
+
+// ─── Kazora Cluster Scraper (Female Titan, Toji, Levi, Goku) ───
+async function resolveKazoraStream(clusterId, aniListId, episode = 1, audioType = "sub") {
+  try {
+    const clusterMap = {
+      kazo_anime: "kazora",
+      kyoo_anime: "yuri",
+      juju_anime: "juju",
+      lufi_anime: "lufi",
+      miruro_anime: "kazora",
+      kazora: "kazora",
+      yuri: "yuri",
+      juju: "juju",
+      lufi: "lufi"
+    };
+    const clusterNameMap = {
+      kazo_anime: "Female Titan",
+      kyoo_anime: "Toji",
+      juju_anime: "Levi",
+      lufi_anime: "Goku",
+      miruro_anime: "Shisui"
+    };
+    const targetCluster = clusterMap[clusterId] || clusterId || "kazora";
+    const typeParam = audioType === "dub" ? "dub" : "sub";
+    const url = `https://kazora.cc/api/watch?id=${aniListId}&ep=${episode}&server=${targetCluster}&type=${typeParam}`;
+    const res = await fetch(url, {
+      headers: {
+        Referer: "https://kazora.cc/",
+        Origin: "https://kazora.cc",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36"
+      },
+      signal: AbortSignal.timeout(6000)
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json.success || !json.results) return null;
+    const r = json.results;
+    let m3u8Url = "";
+    let referer = "https://megaplay.buzz/";
+    let origin = "https://megaplay.buzz";
+    if (r.playlist) {
+      try {
+        const parts = r.playlist.replace("/stream-embed/playlist/", "").split(".");
+        if (parts.length >= 1) {
+          const payload = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+          if (payload.m3u8) m3u8Url = payload.m3u8;
+          if (payload.up?.Referer) referer = payload.up.Referer;
+          if (payload.up?.Origin) origin = payload.up.Origin;
+        }
+      } catch (e) {
+        console.error("[Kazora] Error parsing JWT playlist:", e);
+      }
+    }
+    if (!m3u8Url && r.embed?.url) {
+      try {
+        const parts = r.embed.url.replace("/stream-embed/embed/", "").split(".");
+        if (parts.length >= 1) {
+          const payload = JSON.parse(Buffer.from(parts[0], "base64url").toString("utf8"));
+          if (payload.m3u8) m3u8Url = payload.m3u8;
+          if (payload.up?.Referer) referer = payload.up.Referer;
+          if (payload.up?.Origin) origin = payload.up.Origin;
+        }
+      } catch (e) {
+        console.error("[Kazora] Error parsing embed URL:", e);
+      }
+    }
+    if (!m3u8Url) return null;
+
+    const subtitles = (r.tracks || []).map((t) => {
+      let subUrl = t.file || "";
+      if (typeof t.file === "string" && t.file.includes("?t=")) {
+        try {
+          const tParam = t.file.split("?t=")[1].split("&")[0];
+          const payload = JSON.parse(Buffer.from(tParam.split(".")[0], "base64url").toString("utf8"));
+          if (payload.u) subUrl = payload.u;
+        } catch {}
+      }
+      return {
+        label: t.label || t.lang || "English",
+        lang: t.lang || "en",
+        url: `/api/stream/proxy?url=${encodeURIComponent(subUrl)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`,
+        default: Boolean(t.default) || t.lang === "en" || t.lang === "eng"
+      };
+    });
+
+    const proxiedStreamUrl = `/api/stream/proxy?url=${encodeURIComponent(m3u8Url)}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
+    return {
+      success: true,
+      server: clusterId,
+      serverName: clusterNameMap[clusterId] || clusterId,
+      mode: "hls",
+      streamUrl: proxiedStreamUrl,
+      rawUrl: m3u8Url,
+      subtitles,
+      quality: "1080p Master HLS",
+      skipData: {
+        intro: r.intro,
+        outro: r.outro
+      },
+      supportsDualAudio: true,
+      hasDub: Boolean(r.servers?.dub && r.servers.dub.length > 0)
+    };
+  } catch (err) {
+    console.error("[Kazora] Stream resolution error:", err);
+    return null;
+  }
 }
 
 // src/lib/streaming/kaa.ts
@@ -1579,17 +1827,580 @@ async function handleResolve(searchParams) {
       return { status: 200, data: { hasDub: null } };
     }
   }
+  const isAnime = rawType === "anime" || Boolean(title && /anime/i.test(title));
   const serverConfig = ALL_STREAM_SERVERS.find((s) => s.id === serverId);
-  try {
-    if (serverId === "miruro_anime") {
+
+  // Helper for single server resolution
+  async function resolveTarget(targetId) {
+    const cfg = ALL_STREAM_SERVERS.find((s) => s.id === targetId);
+
+    // ── 1. Itachi (poseidon) — VAPlayer / Cloudfabric ──
+    if (targetId === "poseidon" || targetId === "poseidon_anime") {
+      let apiUrl = `https://streamdata.vaplayer.ru/api.php?tmdb=${tmdbId}&type=${type}`;
+      if (type === "tv" || (isAnime && (Number(season) > 1 || Number(episode) > 1))) {
+        apiUrl += `&season=${season}&episode=${episode}`;
+      }
+      try {
+        const res = await fetch(apiUrl, {
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            Referer: "https://nextgencloudfabric.com/",
+            Origin: "https://nextgencloudfabric.com"
+          },
+          signal: AbortSignal.timeout(10000)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const rawUrls = data?.data?.stream_urls || data?.stream_urls || [];
+          if (rawUrls.length > 0) {
+            const rawUrl = rawUrls[0];
+            const returnedImdb = data?.data?.imdb_id || imdbId;
+            let resolvedSubs = [];
+            if (returnedImdb) {
+              try {
+                resolvedSubs = await Promise.race([
+                  fetchPublicSubtitles(returnedImdb, type, season, episode),
+                  new Promise((resolve) => setTimeout(() => resolve([]), 1200))
+                ]);
+              } catch {}
+            }
+            const proxiedUrl = `/api/stream/proxy?url=${encodeURIComponent(
+              rawUrl
+            )}&referer=${encodeURIComponent("https://nextgencloudfabric.com/")}&origin=${encodeURIComponent(
+              "https://nextgencloudfabric.com"
+            )}`;
+            return {
+              status: 200,
+              data: {
+                success: true,
+                server: targetId,
+                serverName: cfg?.name || "Itachi",
+                mode: "hls",
+                streamUrl: proxiedUrl,
+                rawUrl,
+                quality: "1080p Master HLS",
+                subtitles: resolvedSubs.length > 0 ? resolvedSubs : data?.subtitles || data?.data?.default_subs || []
+              }
+            };
+          }
+        }
+      } catch {}
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in Itachi cluster" } };
+    }
+
+    // ── 2. Aomine (stellar_hls) — CineBros API ──
+    if (targetId === "stellar_hls" || targetId === "stellar_miami" || targetId === "stellar_boise") {
+      const cbResult = await resolveCineBrosStream(tmdbId, type, season, episode);
+      if (cbResult?.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            serverName: cfg?.name ? `${cfg.name} (${cbResult.quality})` : cbResult.serverName,
+            mode: "hls",
+            streamUrl: cbResult.streamUrl,
+            rawUrl: cbResult.rawUrl,
+            subtitles: cbResult.subtitles || [],
+            quality: cbResult.quality,
+            is4k: cbResult.is4k
+          }
+        };
+      }
+      // Cascade to Cinejoy Nebula
+      try {
+        const cjResult = await resolveCinejoyStream("nebula", tmdbId, type, season, episode, title, year);
+        if (cjResult?.streamUrl) {
+          return {
+            status: 200,
+            data: {
+              success: true,
+              server: targetId,
+              serverName: `Aomine (Cinejoy Failover)`,
+              mode: "hls",
+              streamUrl: cjResult.streamUrl,
+              subtitles: cjResult.subtitles || [],
+              quality: cjResult.quality || "1080p Master HLS",
+              is4k: cjResult.is4k
+            }
+          };
+        }
+      } catch {}
+
+      // Cascade to legacy Stellar stream
+      const targetSubServer = targetId === "stellar_boise" ? "boise" : targetId === "stellar_miami" ? "miami" : "auto";
+      const stellarResult = await resolveStellarStream(targetSubServer, tmdbId, type, season, episode);
+      if (stellarResult?.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            mode: "hls",
+            serverName: stellarResult.server,
+            streamUrl: stellarResult.streamUrl,
+            subtitles: stellarResult.subtitles || [],
+            quality: stellarResult.quality,
+            is4k: stellarResult.is4k
+          }
+        };
+      }
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in Aomine / CineBros cluster" } };
+    }
+
+    // ── 3. Obito (vixsrc_hls) — Hybrid Failover (Citadel -> Cinejoy Nebula) ──
+    if (targetId === "vixsrc_hls") {
+      // Step A: Rivestream Citadel
+      try {
+        const riveResult = await resolveRivestreamProvider("citadel", tmdbId, type, season, episode);
+        if (riveResult.success && riveResult.streamUrl) {
+          return {
+            status: 200,
+            data: {
+              success: true,
+              server: targetId,
+              serverName: "Obito (Citadel Multi-Audio)",
+              mode: "hls",
+              streamUrl: riveResult.streamUrl,
+              subtitles: riveResult.subtitles || [],
+              quality: riveResult.quality || "720p / 1080p",
+              supportsDualAudio: true
+            }
+          };
+        }
+      } catch {}
+
+      // Step B: Cinejoy Nebula
+      try {
+        const cjResult = await resolveCinejoyStream("nebula", tmdbId, type, season, episode, title, year);
+        if (cjResult?.streamUrl) {
+          return {
+            status: 200,
+            data: {
+              success: true,
+              server: targetId,
+              serverName: "Obito (Cinejoy Nebula)",
+              mode: "hls",
+              streamUrl: cjResult.streamUrl,
+              subtitles: cjResult.subtitles || [],
+              quality: cjResult.quality || "1080p Master HLS",
+              supportsDualAudio: true
+            }
+          };
+        }
+      } catch {}
+
+      // Step C: MovieNight failover
+      const mnResult = await resolveMovieNightStream(tmdbId, type, season, episode, title, "vixsrc-1", imdbId, year);
+      if (mnResult.success && mnResult.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            serverName: `Obito (${mnResult.server})`,
+            mode: "hls",
+            streamUrl: mnResult.streamUrl,
+            subtitles: mnResult.subtitles || [],
+            quality: mnResult.quality || "auto",
+            supportsDualAudio: true
+          }
+        };
+      }
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in Obito cluster" } };
+    }
+
+    // ── 4. Madara (salem_hls) — Cinejoy API Cluster ──
+    if (targetId === "salem_hls") {
+      try {
+        const cjResult = await resolveCinejoyStream("nebula", tmdbId, type, season, episode, title, year);
+        if (cjResult?.streamUrl) {
+          return {
+            status: 200,
+            data: {
+              success: true,
+              server: targetId,
+              serverName: "Madara (Cinejoy Nebula)",
+              mode: "hls",
+              streamUrl: cjResult.streamUrl,
+              subtitles: cjResult.subtitles || [],
+              quality: cjResult.quality || "1080p Master HLS"
+            }
+          };
+        }
+      } catch {}
+      const mnResult = await resolveMovieNightStream(tmdbId, type, season, episode, title, "salem", imdbId, year);
+      if (mnResult.success && mnResult.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            serverName: `Madara (${mnResult.server})`,
+            mode: "hls",
+            streamUrl: mnResult.streamUrl,
+            subtitles: mnResult.subtitles || [],
+            quality: mnResult.quality || "auto"
+          }
+        };
+      }
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in Madara cluster" } };
+    }
+
+    // ── 5. Minato (movienight_auto) — Cinejoy API Cluster Auto ──
+    if (targetId === "movienight_auto" || targetId === "movienight") {
+      try {
+        const cjResult = await resolveCinejoyStream("auto", tmdbId, type, season, episode, title, year);
+        if (cjResult?.streamUrl) {
+          return {
+            status: 200,
+            data: {
+              success: true,
+              server: targetId,
+              serverName: `Minato (${cjResult.server})`,
+              mode: "hls",
+              streamUrl: cjResult.streamUrl,
+              subtitles: cjResult.subtitles || [],
+              quality: cjResult.quality || "1080p Master HLS",
+              supportsDualAudio: true
+            }
+          };
+        }
+      } catch {}
+      const mnResult = await resolveMovieNightStream(tmdbId, type, season, episode, title, void 0, imdbId, year);
+      if (mnResult.success && mnResult.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            serverName: `Minato (${mnResult.server})`,
+            mode: "hls",
+            streamUrl: mnResult.streamUrl,
+            subtitles: mnResult.subtitles || [],
+            quality: mnResult.quality || "auto",
+            supportsDualAudio: true
+          }
+        };
+      }
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in Minato cluster" } };
+    }
+
+    // ── 6. Rivestream Cluster: Luffy (rive_citadel), L (rive_vanguard), Tanjiro (atlantia) ──
+    if (targetId === "atlantia" || targetId.startsWith("rive_")) {
+      const preferredProvider = targetId === "rive_vanguard" ? "vanguard" : targetId === "rive_citadel" ? "citadel" : (targetId === "rive_mirage" || targetId === "atlantia") ? "mirage" : void 0;
+      const mediaType = type === "tv" ? "tv" : "movie";
+      let riveResult = preferredProvider
+        ? await resolveRivestreamProvider(preferredProvider, tmdbId, mediaType, season, episode)
+        : await resolveRivestreamStream(tmdbId, mediaType, season, episode);
+      if (!riveResult.success && preferredProvider) {
+        riveResult = await resolveRivestreamStream(tmdbId, mediaType, season, episode);
+      }
+      if (riveResult.success && riveResult.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            serverName: cfg?.name || targetId,
+            mode: "hls",
+            streamUrl: riveResult.streamUrl,
+            rawUrl: riveResult.rawUrl,
+            subtitles: riveResult.subtitles || [],
+            quality: riveResult.quality || "1080p Master HLS",
+            activeProvider: riveResult.provider,
+            supportsDualAudio: targetId === "rive_citadel" || riveResult.provider === "citadel"
+          }
+        };
+      }
+      return {
+        status: 200,
+        data: {
+          success: false,
+          server: targetId,
+          message: riveResult.error || `No active stream found in ${cfg?.name || "Rivestream"} cluster`
+        }
+      };
+    }
+
+    // ── 7. Killua (vidzee) — VidZee FastCloud API ──
+    if (targetId === "vidzee") {
+      const vidzeeResult = await resolveVidZee(
+        tmdbId,
+        type === "tv" ? "tv" : "movie",
+        parseInt(season, 10) || 1,
+        parseInt(episode, 10) || 1
+      );
+      if (vidzeeResult.success && vidzeeResult.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            serverName: cfg?.name || "Killua",
+            mode: "hls",
+            streamUrl: vidzeeResult.streamUrl,
+            rawUrl: vidzeeResult.rawUrl,
+            subtitles: vidzeeResult.subtitles || [],
+            quality: vidzeeResult.quality || "1080p FastCloud HLS"
+          }
+        };
+      }
+      return { status: 200, data: { success: false, server: targetId, message: vidzeeResult.error || "No stream found in VidZee cluster" } };
+    }
+
+    // ── 8. Kakashi (orion) — 7movies / Vidrift Token Gateway ──
+    if (targetId === "orion") {
+      const isTv = type === "tv";
+      const numTmdb = Number(tmdbId);
+      const pageReferer = isTv ? `https://7movies.ac/tv/${numTmdb}/watch?season=${season}&episode=${episode}` : `https://7movies.ac/movie/${numTmdb}/watch`;
+      try {
+        const tokenRes = await fetch("https://7movies.ac/api/playback-token", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Referer: pageReferer,
+            Origin: "https://7movies.ac",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+          },
+          body: JSON.stringify(
+            isTv ? { tmdbId: numTmdb, type, season: Number(season), episode: Number(episode) } : { tmdbId: numTmdb, type }
+          ),
+          signal: AbortSignal.timeout(3500)
+        });
+        if (tokenRes.ok) {
+          const tokenData = await tokenRes.json();
+          const token = tokenData?.token || tokenData?.data?.token;
+          if (token) {
+            const path3 = isTv ? `tv/${numTmdb}/${season}/${episode}` : `movie/${numTmdb}`;
+            const sourceRes = await fetch(
+              `https://embed.vidrift.net/api/source/${path3}?token=${token}&provider=moviebox`,
+              {
+                headers: {
+                  Referer: "https://embed.vidrift.net/",
+                  Origin: "https://embed.vidrift.net",
+                  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+                },
+                signal: AbortSignal.timeout(3500)
+              }
+            );
+            if (sourceRes.ok) {
+              const sourceData = await sourceRes.json();
+              const rawStream = sourceData?.data?.source || sourceData?.source;
+              if (rawStream) {
+                const proxiedUrl = `/api/stream/proxy?url=${encodeURIComponent(
+                  rawStream
+                )}&referer=${encodeURIComponent("https://embed.vidrift.net/")}&origin=${encodeURIComponent(
+                  "https://embed.vidrift.net"
+                )}`;
+                return {
+                  status: 200,
+                  data: {
+                    success: true,
+                    server: targetId,
+                    serverName: cfg?.name || "Kakashi",
+                    mode: "hls",
+                    streamUrl: proxiedUrl,
+                    quality: "1080p Master HLS",
+                    subtitles: sourceData?.subtitles || [],
+                    supportsDualAudio: true
+                  }
+                };
+              }
+            }
+          }
+        }
+      } catch {}
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in Orion cluster" } };
+    }
+
+    // ── 9. Sasuke (purstream) — PurStream Search Gateway ──
+    if (targetId === "purstream") {
+      const cleanTitle = (title || "").replace(/[^a-zA-Z0-9\s]/g, "").trim();
+      if (!cleanTitle) {
+        return { status: 200, data: { success: false, server: targetId, message: "Missing title" } };
+      }
+      try {
+        const searchRes = await fetch(
+          `https://api.purstream.ad/api/v1/search-bar/search/${encodeURIComponent(cleanTitle)}`,
+          {
+            headers: {
+              Referer: "https://purstream.ad/",
+              Origin: "https://purstream.ad",
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+            },
+            signal: AbortSignal.timeout(4000)
+          }
+        );
+        if (searchRes.ok) {
+          const searchData = await searchRes.json();
+          const movies = searchData?.data?.items?.movies?.items || [];
+          const shows = searchData?.data?.items?.shows?.items || [];
+          const items = type === "tv" ? (shows.length ? shows : movies) : (movies.length ? movies : shows);
+          if (items.length > 0) {
+            const item = items[0];
+            const streamEndpoint = type === "tv" ? `https://api.purstream.ad/api/v1/stream/${item.id}/episode?season=${season}&episode=${episode}` : `https://api.purstream.ad/api/v1/stream/${item.id}`;
+            const streamRes = await fetch(streamEndpoint, {
+              headers: {
+                Referer: "https://purstream.ad/",
+                Origin: "https://purstream.ad"
+              },
+              signal: AbortSignal.timeout(4000)
+            });
+            if (streamRes.ok) {
+              const streamData = await streamRes.json();
+              const sources = streamData?.data?.items?.sources || [];
+              const rawUrl = sources[0]?.stream_url || streamData?.data?.stream || streamData?.stream;
+              if (rawUrl) {
+                const proxiedUrl = `/api/stream/proxy?url=${encodeURIComponent(
+                  rawUrl
+                )}&referer=${encodeURIComponent("https://purstream.ad/")}&origin=${encodeURIComponent("https://purstream.ad")}`;
+                return {
+                  status: 200,
+                  data: {
+                    success: true,
+                    server: targetId,
+                    serverName: cfg?.name || "Sasuke",
+                    mode: "hls",
+                    streamUrl: proxiedUrl,
+                    quality: sources[0]?.source_name || "1080p Master HLS",
+                    subtitles: streamData?.subtitles || []
+                  }
+                };
+              }
+            }
+          }
+        }
+      } catch {}
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in PurStream cluster" } };
+    }
+
+    // ── 10. Cinejoy Clusters: Mikasa (cinejoy_nebula), Hashirama (cinejoy_hls), Naruto (cinejoy_lisbon) ──
+    if (targetId === "cinejoy_hls" || targetId === "cinejoy_lisbon" || targetId === "cinejoy_nebula") {
+      const targetSubServer = targetId === "cinejoy_lisbon" ? "lisbon" : targetId === "cinejoy_nebula" ? "nebula" : "auto";
+      const cinejoyResult = await resolveCinejoyStream(targetSubServer, tmdbId, type, season, episode, title);
+      if (cinejoyResult?.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            mode: "hls",
+            serverName: cinejoyResult.server,
+            streamUrl: cinejoyResult.streamUrl,
+            subtitles: cinejoyResult.subtitles || [],
+            quality: cinejoyResult.quality,
+            is4k: cinejoyResult.is4k
+          }
+        };
+      }
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in Cinejoy cluster" } };
+    }
+
+    // ── 11. Eren (shiopa_hls) ──
+    if (targetId === "shiopa_hls") {
+      const shiopaResult = await resolveShiopaStream(tmdbId, type, season, episode);
+      if (shiopaResult?.streamUrl) {
+        const proxiedStreamUrl = `/api/stream/proxy?url=${encodeURIComponent(shiopaResult.streamUrl)}${shiopaResult.headers?.Referer ? `&referer=${encodeURIComponent(shiopaResult.headers.Referer)}` : ""}`;
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            mode: "hls",
+            serverName: `Eren (${shiopaResult.server})`,
+            streamUrl: proxiedStreamUrl
+          }
+        };
+      }
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in Shiopa cluster" } };
+    }
+
+    // ── 12. Kazora Anime Clusters: Female Titan (kazo_anime), Toji (kyoo_anime), Levi (juju_anime), Goku (lufi_anime) ──
+    if (targetId === "kazo_anime" || targetId === "kyoo_anime" || targetId === "juju_anime" || targetId === "lufi_anime") {
+      const audioMode = audio === "dub" ? "dub" : "sub";
+      const anilistId = searchParams.get("anilistId") || await resolveAnilistId(title, rawTmdbId);
+      if (anilistId) {
+        const kzResult = await resolveKazoraStream(targetId, anilistId, episode, audioMode);
+        if (kzResult?.streamUrl) {
+          return {
+            status: 200,
+            data: {
+              ...kzResult,
+              serverName: cfg?.name || kzResult.serverName,
+              audioType: audioMode
+            }
+          };
+        }
+      }
+      // Failover to KAA
+      const kaa = await resolveKAAStream(title, episode, audioMode);
+      if (kaa?.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            serverName: `${cfg?.name || "Kazora"} (KAA Fallback)`,
+            mode: "hls",
+            streamUrl: kaa.streamUrl,
+            subtitles: kaa.subtitles || [],
+            quality: kaa.quality || "1080p Master HLS",
+            hasDub: true,
+            supportsDualAudio: true,
+            audioType: audioMode
+          }
+        };
+      }
+      // Failover to AnimeParadise
+      const ap = await resolveAnimeParadise(title, parseInt(episode, 10) || 1);
+      if (ap?.success && ap.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            serverName: `${cfg?.name || "Kazora"} (AnimeParadise Fallback)`,
+            mode: "hls",
+            streamUrl: ap.streamUrl,
+            subtitles: ap.subtitles || [],
+            quality: ap.quality || "1080p FHD",
+            hasDub: false,
+            supportsDualAudio: false,
+            audioType: audioMode,
+            skipData: ap.skipData
+          }
+        };
+      }
+      return { status: 200, data: { success: false, server: targetId, message: `No stream found on ${cfg?.name || targetId} cluster` } };
+    }
+
+    // ── 13. Shisui (miruro_anime) ──
+    if (targetId === "miruro_anime") {
       const audioMode = audio === "dub" ? "dub" : "sub";
       let miruroResult = await resolveMiruroStream(title, episode, audioMode);
+      if (!miruroResult?.streamUrl) {
+        const anilistId = searchParams.get("anilistId") || await resolveAnilistId(title, rawTmdbId);
+        if (anilistId) {
+          const kz = await resolveKazoraStream("kazora", anilistId, episode, audioMode);
+          if (kz?.streamUrl) {
+            miruroResult = {
+              streamUrl: kz.streamUrl,
+              server: "Shisui (Kazora)",
+              provider: "kazora",
+              subtitles: kz.subtitles || [],
+              quality: kz.quality || "1080p Master HLS",
+              hasDub: kz.hasDub
+            };
+          }
+        }
+      }
       if (!miruroResult?.streamUrl) {
         const kaa = await resolveKAAStream(title, episode, audioMode);
         if (kaa?.streamUrl) {
           miruroResult = {
             streamUrl: kaa.streamUrl,
-            server: serverConfig?.name || "Shisui",
+            server: "Shisui (KAA)",
             provider: "kaa",
             subtitles: kaa.subtitles || [],
             quality: kaa.quality || "1080p Master HLS",
@@ -1598,11 +2409,11 @@ async function handleResolve(searchParams) {
         }
       }
       if (!miruroResult?.streamUrl) {
-        const ap = await resolveAnimeParadise(title, parseInt(episode, 10));
+        const ap = await resolveAnimeParadise(title, parseInt(episode, 10) || 1);
         if (ap?.success && ap.streamUrl) {
           miruroResult = {
             streamUrl: ap.streamUrl,
-            server: serverConfig?.name || "Shisui",
+            server: "Shisui (AnimeParadise)",
             provider: "animeparadise",
             subtitles: ap.subtitles || [],
             quality: ap.quality || "1080p FHD",
@@ -1615,8 +2426,8 @@ async function handleResolve(searchParams) {
           status: 200,
           data: {
             success: true,
-            server: serverId,
-            serverName: serverConfig?.name || "Shisui",
+            server: targetId,
+            serverName: cfg?.name || "Shisui",
             mode: "hls",
             streamUrl: miruroResult.streamUrl,
             subtitles: miruroResult.subtitles || [],
@@ -1627,408 +2438,18 @@ async function handleResolve(searchParams) {
           }
         };
       }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: "No stream found on Shisui anime cluster"
-        }
-      };
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found on Shisui anime cluster" } };
     }
-    if (serverId === "salem_hls" || serverId === "vixsrc_hls" || serverId === "movienight_auto" || serverId === "movienight") {
-      const preferred = serverId === "salem_hls" ? "salem" : serverId === "vixsrc_hls" ? "vixsrc-1" : void 0;
-      const mnResult = await resolveMovieNightStream(
-        tmdbId,
-        type,
-        season,
-        episode,
-        title,
-        preferred,
-        imdbId,
-        year
-      );
-      if (mnResult.success && mnResult.streamUrl) {
-        return {
-          status: 200,
-          data: {
-            success: true,
-            server: serverId,
-            serverName: `MovieNight (${mnResult.server})`,
-            mode: "hls",
-            streamUrl: mnResult.streamUrl,
-            subtitles: mnResult.subtitles || [],
-            quality: mnResult.quality || "auto"
-          }
-        };
-      }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: mnResult.error || "No stream found in MovieNight cluster"
-        }
-      };
-    }
-    if (serverId === "stellar_hls" || serverId === "stellar_miami" || serverId === "stellar_boise") {
-      const targetSubServer = serverId === "stellar_boise" ? "boise" : serverId === "stellar_miami" ? "miami" : "auto";
-      const stellarResult = await resolveStellarStream(
-        targetSubServer,
-        tmdbId,
-        type,
-        season,
-        episode
-      );
-      if (stellarResult?.streamUrl) {
-        return {
-          status: 200,
-          data: {
-            success: true,
-            server: serverId,
-            mode: "hls",
-            serverName: stellarResult.server,
-            streamUrl: stellarResult.streamUrl,
-            subtitles: stellarResult.subtitles || [],
-            quality: stellarResult.quality,
-            is4k: stellarResult.is4k
-          }
-        };
-      }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: "No stream found in Stellar cluster"
-        }
-      };
-    }
-    if (serverId === "cinejoy_hls" || serverId === "cinejoy_lisbon" || serverId === "cinejoy_nebula") {
-      const targetSubServer = serverId === "cinejoy_lisbon" ? "lisbon" : serverId === "cinejoy_nebula" ? "nebula" : "auto";
-      const cinejoyResult = await resolveCinejoyStream(
-        targetSubServer,
-        tmdbId,
-        type,
-        season,
-        episode,
-        title
-      );
-      if (cinejoyResult?.streamUrl) {
-        return {
-          status: 200,
-          data: {
-            success: true,
-            server: serverId,
-            mode: "hls",
-            serverName: cinejoyResult.server,
-            streamUrl: cinejoyResult.streamUrl,
-            subtitles: cinejoyResult.subtitles || [],
-            quality: cinejoyResult.quality,
-            is4k: cinejoyResult.is4k
-          }
-        };
-      }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: "No stream found in Cinejoy cluster"
-        }
-      };
-    }
-    if (serverId === "poseidon" || serverId === "poseidon_anime") {
-      let apiUrl = `https://streamdata.vaplayer.ru/api.php?tmdb=${tmdbId}&type=${type}`;
-      if (type === "tv") {
-        apiUrl += `&season=${season}&episode=${episode}`;
-      }
-      const res = await fetch(apiUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-          Referer: "https://nextgencloudfabric.com/",
-          Origin: "https://nextgencloudfabric.com"
-        },
-        signal: AbortSignal.timeout(7e3)
-      });
-      if (res.ok) {
-        const data = await res.json();
-        const rawUrls = data?.data?.stream_urls || data?.stream_urls || [];
-        if (rawUrls.length > 0) {
-          const rawUrl = rawUrls[0];
-          const returnedImdb = data?.data?.imdb_id || imdbId;
-          let resolvedSubs = [];
-          if (returnedImdb) {
-            try {
-              resolvedSubs = await Promise.race([
-                fetchPublicSubtitles(returnedImdb, type, season, episode),
-                new Promise((resolve) => setTimeout(() => resolve([]), 1200))
-              ]);
-            } catch {
-            }
-          }
-          const proxiedUrl = `/api/stream/proxy?url=${encodeURIComponent(
-            rawUrl
-          )}&referer=${encodeURIComponent("https://nextgencloudfabric.com/")}&origin=${encodeURIComponent(
-            "https://nextgencloudfabric.com"
-          )}`;
-          return {
-            status: 200,
-            data: {
-              success: true,
-              server: serverId,
-              serverName: serverConfig?.name || "Itachi",
-              mode: "hls",
-              streamUrl: proxiedUrl,
-              rawUrl,
-              subtitles: resolvedSubs.length > 0 ? resolvedSubs : data?.subtitles || data?.data?.default_subs || []
-            }
-          };
-        }
-      }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: `No stream found in ${serverConfig?.name || "Itachi"} cluster`
-        }
-      };
-    }
-    if (serverId === "shiopa_hls") {
-      const shiopaResult = await resolveShiopaStream(tmdbId, type, season, episode);
-      if (shiopaResult?.streamUrl) {
-        const proxiedStreamUrl = `/api/stream/proxy?url=${encodeURIComponent(shiopaResult.streamUrl)}${shiopaResult.headers?.Referer ? `&referer=${encodeURIComponent(shiopaResult.headers.Referer)}` : ""}`;
-        return {
-          status: 200,
-          data: {
-            success: true,
-            server: serverId,
-            mode: "hls",
-            serverName: `Shiopa (${shiopaResult.server})`,
-            streamUrl: proxiedStreamUrl
-          }
-        };
-      }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: "No stream found in Shiopa cluster"
-        }
-      };
-    }
-    if (serverId === "orion") {
-      const isTv = type === "tv";
-      const numTmdb = Number(tmdbId);
-      const pageReferer = isTv ? `https://7movies.ac/tv/${numTmdb}/watch?season=${season}&episode=${episode}` : `https://7movies.ac/movie/${numTmdb}/watch`;
-      const tokenRes = await fetch("https://7movies.ac/api/playback-token", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Referer: pageReferer,
-          Origin: "https://7movies.ac",
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-        },
-        body: JSON.stringify(
-          isTv ? { tmdbId: numTmdb, type, season: Number(season), episode: Number(episode) } : { tmdbId: numTmdb, type }
-        ),
-        signal: AbortSignal.timeout(3500)
-      });
-      if (tokenRes.ok) {
-        const tokenData = await tokenRes.json();
-        const token = tokenData?.token || tokenData?.data?.token;
-        if (token) {
-          const path3 = isTv ? `tv/${numTmdb}/${season}/${episode}` : `movie/${numTmdb}`;
-          const sourceRes = await fetch(
-            `https://embed.vidrift.net/api/source/${path3}?token=${token}&provider=moviebox`,
-            {
-              headers: {
-                Referer: "https://embed.vidrift.net/",
-                Origin: "https://embed.vidrift.net",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-              },
-              signal: AbortSignal.timeout(3500)
-            }
-          );
-          if (sourceRes.ok) {
-            const sourceData = await sourceRes.json();
-            const rawStream = sourceData?.data?.source || sourceData?.source;
-            if (rawStream) {
-              const proxiedUrl = `/api/stream/proxy?url=${encodeURIComponent(
-                rawStream
-              )}&referer=${encodeURIComponent("https://embed.vidrift.net/")}&origin=${encodeURIComponent(
-                "https://embed.vidrift.net"
-              )}`;
-              return {
-                status: 200,
-                data: {
-                  success: true,
-                  server: serverId,
-                  mode: "hls",
-                  streamUrl: proxiedUrl,
-                  subtitles: sourceData?.subtitles || []
-                }
-              };
-            }
-          }
-        }
-      }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: "No stream found in Orion cluster"
-        }
-      };
-    }
-    if (serverId === "purstream") {
-      const cleanTitle = (title || "").replace(/[^a-zA-Z0-9\s]/g, "").trim();
-      if (!cleanTitle) {
-        return { status: 200, data: { success: false, server: serverId, message: "Missing title" } };
-      }
-      const searchRes = await fetch(
-        `https://api.purstream.ad/api/v1/search-bar/search/${encodeURIComponent(cleanTitle)}`,
-        {
-          headers: {
-            Referer: "https://purstream.ad/",
-            Origin: "https://purstream.ad",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-          },
-          signal: AbortSignal.timeout(3500)
-        }
-      );
-      if (searchRes.ok) {
-        const searchData = await searchRes.json();
-        const results = searchData?.data || searchData?.results || [];
-        if (results.length > 0) {
-          const item = results[0];
-          const streamEndpoint = type === "tv" ? `https://api.purstream.ad/api/v1/stream/${item.id}/episode?season=${season}&episode=${episode}` : `https://api.purstream.ad/api/v1/stream/${item.id}`;
-          const streamRes = await fetch(streamEndpoint, {
-            headers: { Referer: "https://purstream.ad/" },
-            signal: AbortSignal.timeout(3500)
-          });
-          if (streamRes.ok) {
-            const streamData = await streamRes.json();
-            const rawUrl = streamData?.data?.stream || streamData?.stream;
-            if (rawUrl) {
-              const proxiedUrl = `/api/stream/proxy?url=${encodeURIComponent(
-                rawUrl
-              )}&referer=${encodeURIComponent("https://purstream.ad/")}`;
-              return {
-                status: 200,
-                data: {
-                  success: true,
-                  server: serverId,
-                  mode: "hls",
-                  streamUrl: proxiedUrl,
-                  subtitles: streamData?.subtitles || []
-                }
-              };
-            }
-          }
-        }
-      }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: "No stream found in PurStream cluster"
-        }
-      };
-    }
-    if (serverId === "atlantia" || serverId.startsWith("rive_")) {
-      const preferredProvider = serverId === "rive_vanguard" ? "vanguard" : serverId === "rive_citadel" ? "citadel" : serverId === "rive_mirage" ? "mirage" : void 0;
-      const mediaType = type === "tv" ? "tv" : "movie";
-      const riveResult = preferredProvider ? await resolveRivestreamProvider(preferredProvider, tmdbId, mediaType, season, episode) : await resolveRivestreamStream(tmdbId, mediaType, season, episode);
-      if (riveResult.success && riveResult.streamUrl) {
-        return {
-          status: 200,
-          data: {
-            success: true,
-            server: serverId,
-            mode: "hls",
-            streamUrl: riveResult.streamUrl,
-            subtitles: riveResult.subtitles || [],
-            quality: riveResult.quality,
-            activeProvider: riveResult.provider
-          }
-        };
-      }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: riveResult.error || "No active stream found in Rivestream cluster"
-        }
-      };
-    }
-    if (serverId === "animeparadise") {
-      const animeResult = await resolveAnimeParadise(title, parseInt(episode, 10));
-      if (animeResult.success && animeResult.streamUrl) {
-        return {
-          status: 200,
-          data: {
-            success: true,
-            server: serverId,
-            mode: "hls",
-            streamUrl: animeResult.streamUrl,
-            subtitles: animeResult.subtitles || [],
-            quality: animeResult.quality,
-            skipData: animeResult.skipData
-          }
-        };
-      }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: animeResult.error || "No stream found in Anime Paradise cluster"
-        }
-      };
-    }
-    if (serverId === "vidzee") {
-      const vidzeeResult = await resolveVidZee(
-        tmdbId,
-        type === "tv" ? "tv" : "movie",
-        parseInt(season, 10),
-        parseInt(episode, 10)
-      );
-      if (vidzeeResult.success && vidzeeResult.streamUrl) {
-        return {
-          status: 200,
-          data: {
-            success: true,
-            server: serverId,
-            mode: "hls",
-            streamUrl: vidzeeResult.streamUrl,
-            subtitles: vidzeeResult.subtitles || [],
-            quality: vidzeeResult.quality
-          }
-        };
-      }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: vidzeeResult.error || "No stream found in VidZee cluster"
-        }
-      };
-    }
-    if (serverId === "kaa_anime") {
+
+    // ── 14. Yuji (kaa_anime) — KickAssAnime Direct Master HLS ──
+    if (targetId === "kaa_anime") {
       const kaaResult = await resolveKAAStream(title, episode, audio);
       if (kaaResult?.streamUrl) {
         return {
           status: 200,
           data: {
             success: true,
-            server: serverId,
+            server: targetId,
             serverName: kaaResult.serverName,
             mode: "hls",
             streamUrl: kaaResult.streamUrl,
@@ -2040,14 +2461,30 @@ async function handleResolve(searchParams) {
           }
         };
       }
-      const ap = await resolveAnimeParadise(title, parseInt(episode, 10));
+      // Failover to Kazora
+      const anilistId = searchParams.get("anilistId") || await resolveAnilistId(title, rawTmdbId);
+      if (anilistId) {
+        const kz = await resolveKazoraStream("kazora", anilistId, episode, audio);
+        if (kz?.streamUrl) {
+          return {
+            status: 200,
+            data: {
+              ...kz,
+              server: targetId,
+              serverName: `${cfg?.name || "Yuji"} (Kazora Fallback)`,
+              audioType: audio
+            }
+          };
+        }
+      }
+      const ap = await resolveAnimeParadise(title, parseInt(episode, 10) || 1);
       if (ap?.success && ap.streamUrl) {
         return {
           status: 200,
           data: {
             success: true,
-            server: serverId,
-            serverName: serverConfig?.name || "Yuji",
+            server: targetId,
+            serverName: cfg?.name || "Yuji",
             mode: "hls",
             streamUrl: ap.streamUrl,
             subtitles: ap.subtitles || [],
@@ -2058,23 +2495,107 @@ async function handleResolve(searchParams) {
           }
         };
       }
-      return {
-        status: 200,
-        data: {
-          success: false,
-          server: serverId,
-          message: "No stream found in KickAssAnime cluster"
-        }
-      };
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in KickAssAnime cluster" } };
     }
-    return {
-      status: 200,
-      data: {
-        success: false,
-        server: serverId,
-        message: "Server returned no playable source"
+
+    // ── 15. Tengen (orion_anime) ──
+    if (targetId === "orion_anime") {
+      const audioMode = audio === "dub" ? "dub" : "sub";
+      const anilistId = searchParams.get("anilistId") || await resolveAnilistId(title, rawTmdbId);
+      if (anilistId) {
+        const kz = await resolveKazoraStream("yuri", anilistId, episode, audioMode);
+        if (kz?.streamUrl) {
+          return {
+            status: 200,
+            data: {
+              ...kz,
+              server: targetId,
+              serverName: cfg?.name || "Tengen",
+              audioType: audioMode
+            }
+          };
+        }
       }
-    };
+      const kaa = await resolveKAAStream(title, episode, audioMode);
+      if (kaa?.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            serverName: cfg?.name || "Tengen",
+            mode: "hls",
+            streamUrl: kaa.streamUrl,
+            subtitles: kaa.subtitles || [],
+            quality: kaa.quality || "1080p Master HLS",
+            hasDub: true,
+            supportsDualAudio: true,
+            audioType: audioMode
+          }
+        };
+      }
+      return { status: 200, data: { success: false, server: targetId, message: "No stream found in Tengen cluster" } };
+    }
+
+    // ── 16. AnimeParadise (animeparadise) — Crunchyroll Native Scraper Gateway ──
+    if (targetId === "animeparadise") {
+      const animeResult = await resolveAnimeParadise(title, parseInt(episode, 10) || 1);
+      if (animeResult.success && animeResult.streamUrl) {
+        return {
+          status: 200,
+          data: {
+            success: true,
+            server: targetId,
+            serverName: cfg?.name || "AnimeParadise",
+            mode: "hls",
+            streamUrl: animeResult.streamUrl,
+            rawUrl: animeResult.rawUrl,
+            subtitles: animeResult.subtitles || [],
+            quality: animeResult.quality,
+            skipData: animeResult.skipData
+          }
+        };
+      }
+      // Failover to Kazora
+      const anilistId = searchParams.get("anilistId") || await resolveAnilistId(title, rawTmdbId);
+      if (anilistId) {
+        const kz = await resolveKazoraStream("kazora", anilistId, episode, audio);
+        if (kz?.streamUrl) {
+          return {
+            status: 200,
+            data: {
+              ...kz,
+              server: targetId,
+              serverName: `${cfg?.name || "AnimeParadise"} (Kazora Fallback)`,
+              audioType: audio
+            }
+          };
+        }
+      }
+      return { status: 200, data: { success: false, server: targetId, message: animeResult.error || "No stream found in Anime Paradise cluster" } };
+    }
+
+    return { status: 200, data: { success: false, server: targetId, message: "Server returned no playable source" } };
+  }
+
+  try {
+    // If server is 'auto' or not explicitly provided, try priority chain
+    if (serverId === "auto" || (!searchParams.has("server") && !searchParams.has("serverId"))) {
+      const chain = isAnime
+        ? ["miruro_anime", "kazo_anime", "kaa_anime", "animeparadise", "kyoo_anime", "juju_anime", "lufi_anime", "poseidon_anime"]
+        : ["poseidon", "stellar_hls", "vixsrc_hls", "salem_hls", "purstream", "rive_citadel", "rive_vanguard", "atlantia", "movienight_auto", "cinejoy_nebula"];
+      for (const sid of chain) {
+        try {
+          const res = await resolveTarget(sid);
+          if (res.status === 200 && res.data?.success && res.data?.streamUrl) {
+            return res;
+          }
+        } catch {}
+      }
+      return { status: 200, data: { success: false, server: "auto", message: "All priority streaming servers failed to resolve" } };
+    }
+
+    return await resolveTarget(serverId);
   } catch (error) {
     return {
       status: 500,
