@@ -3,6 +3,82 @@ import vm from "vm";
 import fs from "fs";
 import path from "path";
 import { execFile } from "child_process";
+
+const VPS_ORIGIN = "https://hahaevilcraft.site";
+
+function toBase64Url(value: string): string {
+  return Buffer.from(value, "utf8").toString("base64url");
+}
+
+function isAbsoluteHttpUrl(value: string): boolean {
+  return /^https?:\/\//i.test(value);
+}
+
+function vpsProxyUrl(rawUrl: string, headers?: Record<string, string>): string {
+  if (!rawUrl) return rawUrl;
+
+  if (rawUrl.startsWith(`${VPS_ORIGIN}/proxy?`)) return rawUrl;
+
+  if (rawUrl.startsWith("/proxy?") || rawUrl.startsWith("/api/stream/proxy?")) {
+    const parsed = new URL(rawUrl, VPS_ORIGIN);
+    const target = parsed.searchParams.get("url");
+    if (!target) return `${VPS_ORIGIN}${rawUrl}`;
+
+    const merged: Record<string, string> = { ...(headers || {}) };
+    const referer = parsed.searchParams.get("referer");
+    const origin = parsed.searchParams.get("origin");
+    if (referer && !merged.Referer && !merged.referer) merged.Referer = referer;
+    if (origin && !merged.Origin && !merged.origin) merged.Origin = origin;
+
+    return vpsProxyUrl(target, merged);
+  }
+
+  if (rawUrl.startsWith(`${VPS_ORIGIN}/api/stream/proxy?`)) {
+    return vpsProxyUrl(rawUrl.slice(VPS_ORIGIN.length), headers);
+  }
+
+  if (!isAbsoluteHttpUrl(rawUrl)) return rawUrl;
+
+  const u = toBase64Url(rawUrl);
+  const headerEntries = headers
+    ? Object.entries(headers).filter(([, value]) => typeof value === "string" && value)
+    : [];
+  if (!headerEntries.length) return `${VPS_ORIGIN}/proxy?u=${u}`;
+
+  const h = toBase64Url(JSON.stringify(Object.fromEntries(headerEntries)));
+  return `${VPS_ORIGIN}/proxy?u=${u}&h=${h}`;
+}
+
+function routeStreamDataThroughVps(data: any): any {
+  if (!data || typeof data !== "object") return data;
+
+  const baseHeaders =
+    data.headers && typeof data.headers === "object" ? data.headers : undefined;
+
+  if (typeof data.streamUrl === "string") {
+    data.streamUrl = vpsProxyUrl(data.streamUrl, baseHeaders);
+  }
+
+  if (Array.isArray(data.subtitles)) {
+    for (const sub of data.subtitles) {
+      if (!sub || typeof sub !== "object") continue;
+      const subHeaders =
+        sub.headers && typeof sub.headers === "object" ? sub.headers : baseHeaders;
+      if (typeof sub.url === "string") sub.url = vpsProxyUrl(sub.url, subHeaders);
+      if (typeof sub.file === "string") sub.file = vpsProxyUrl(sub.file, subHeaders);
+    }
+  }
+
+  return data;
+}
+
+function routeResultThroughVps(result: any): any {
+  if (result && typeof result === "object" && result.data) {
+    routeStreamDataThroughVps(result.data);
+  }
+  return result;
+}
+
 // api/stream/resolve.ts
 
 
@@ -720,6 +796,7 @@ async function resolveCineBrosStream(tmdbId, type = "movie", season = 1, episode
       mode: "hls",
       streamUrl: best.url,
       rawUrl: best.url,
+      headers: { Referer: referer, Origin: "https://cinebros.net" },
       quality: best.quality ? `${best.quality}p` : "1080p Master HLS",
       subtitles,
       is4k: (best.quality || 0) >= 2160
@@ -2637,7 +2714,7 @@ async function handler(request, response) {
           }
         }
       }
-      const result2 = await handleResolve(searchParams);
+      const result2 = routeResultThroughVps(await handleResolve(searchParams));
       response.setHeader("Content-Type", "application/json");
       response.setHeader("Access-Control-Allow-Origin", "*");
       response.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -2652,7 +2729,7 @@ async function handler(request, response) {
       }
     }
     const fullUrl = new URL(request.url, "http://localhost");
-    const result = await handleResolve(fullUrl.searchParams);
+    const result = routeResultThroughVps(await handleResolve(fullUrl.searchParams));
     return new Response(JSON.stringify(result.data), {
       status: result.status,
       headers: {

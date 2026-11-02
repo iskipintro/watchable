@@ -553,12 +553,12 @@
 <script lang="ts">
 import { computed, defineComponent, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import { startProgressTracking } from '@/composables/user/useProgress'
-import { usePlaybackRoute } from '@/composables/streaming/usePlaybackRoute'
 import { getSyncClient } from '../../lib/syncClient'
+import { vpsProxyUrl } from '@/lib/streaming/vpsProxy'
 
-const HUB_BASE = ''
-const STREAMSCRAPER_HUB = ''
-const OPENSUBTITLES_API = `/api/subtitles`
+const HUB_BASE = 'https://hahaevilcraft.site'
+const STREAMSCRAPER_HUB = 'https://hahaevilcraft.site'
+const OPENSUBTITLES_API = `${HUB_BASE}/api/subtitles`
 
 interface LanguageVariant {
     language: string
@@ -813,30 +813,10 @@ interface HubStream {
     qualities?: string[]
 }
 
-        let adminProxyEnabled = true
-        let proxyFetched = false
-        const { routeProxyEnabled } = usePlaybackRoute()
-
-        async function ensureProxySetting() {
-            if (proxyFetched) return
-            proxyFetched = true
-            try {
-                const client = await getSyncClient()
-                const { data } = await client.from('app_settings').select('value').eq('key', 'stream_proxy_enabled').single()
-                if (data) adminProxyEnabled = data.value === 'true'
-            } catch { /* keep default */ }
-        }
-
         function normalizeProxyMode(raw?: string | null): 'inherit' | 'on' | 'off' {
             if (raw === '0' || raw === 'off') return 'off'
             if (raw === '1' || raw === 'vps' || raw === 'cf' || raw === 'on') return 'on'
             return 'inherit'
-        }
-
-        function shouldUseProxy(stream: HubStream) {
-            if (stream.proxyMode === 'on') return true
-            if (stream.proxyMode === 'off') return false
-            return routeProxyEnabled(adminProxyEnabled)
         }
 
 export default defineComponent({
@@ -2537,7 +2517,6 @@ export default defineComponent({
                 // stay idle unless the user picks them in Player settings. If the
                 // current provider returns no playable stream, fall through to the
                 // next enabled provider automatically.
-                const proxySettingPromise = ensureProxySetting()
                 const providerList = await loadEnabledProviderList()
                 const preferred = selectedServer.value
                     ? providerList.find((provider) => provider.name.toLowerCase() === selectedServer.value.toLowerCase())
@@ -2549,7 +2528,6 @@ export default defineComponent({
                 selectedServer.value = ordered[0].name
                 chainOrdered.value = ordered
                 triedProviders.value = new Set<string>()
-                await proxySettingPromise
                 for (const provider of ordered) {
                     const id = provider.id || provider.name
                     triedProviders.value.add(id.toLowerCase())
@@ -2593,22 +2571,10 @@ export default defineComponent({
             }
             lastTriedStream.value = s
             selectedServer.value = s.providerName || ''
-            // Provider-side proxies (emebd / workers.dev / hub / cf) already relay
-            // the origin fetch — wrapping them through the hub again adds two extra
-            // hops per segment request, so they always play directly.
-            // Streamvault / stream-proxy streams work directly and have CORS enabled; never proxy them.
-            const isStreamvault = Boolean(
-                s.url?.includes('streamvault') ||
-                s.url?.includes('/stream-proxy/')
-            )
-            const alreadyProxied = isStreamvault || Boolean(
-                s.url?.startsWith(`${HUB_BASE}/proxy?`) ||
-                s.url?.includes('cf-header-hahaevilcraft.site') ||
-                /\.workers\.dev\/|\/v1\/proxy\?data=|\/proxy\?data=/.test(s.url || '')
-            )
-            const proxyMode = normalizeProxyMode(s.proxyMode)
-            const forceDirect = proxyMode === 'off' || isStreamvault
-            const useProxy = !forceDirect && shouldUseProxy(s) && !!s.proxyUrl && !alreadyProxied
+            // Relay every stream through the VPS proxy. New scrapers such as
+            // Itachi/Luffy resolve entirely through hahaevilcraft.site.
+            const sourceUrl = s.url || s.proxyUrl
+            const playUrl = vpsProxyUrl(sourceUrl, s.headers)
             const isHlsStream = s.type === 'm3u8' || s.type === 'hls'
             async function tryMount(url: string) {
                 await Promise.all([
@@ -2616,54 +2582,14 @@ export default defineComponent({
                     loadOpenSubtitles().catch(() => {}),
                 ])
             }
-            let playUrl: string
-            if (useProxy) {
-                playUrl = s.proxyUrl!
-                try {
-                    await tryMount(playUrl)
-                } catch (e) {
+            try {
+                await tryMount(playUrl)
+            } catch (e) {
+                if (s.proxyUrl && s.proxyUrl !== sourceUrl) {
+                    console.debug('[MoovieFrame] VPS stream proxy failed, trying provider proxy fallback')
+                    await tryMount(vpsProxyUrl(s.proxyUrl, s.headers))
+                } else {
                     throw e
-                }
-            } else if (!forceDirect && shouldUseProxy(s) && s.headers && Object.keys(s.headers).length) {
-                // Dashboard "Cloudflare proxy" mode already routes provider streams
-                // through our proxies (cf-header-proxy / hub /proxy), embedding the
-                // headers as query params. Wrapping an already-wrapped URL nests
-                // worker calls and 522s — so play those directly.
-                if (alreadyProxied) {
-                    playUrl = s.url
-                    await tryMount(playUrl)
-                } else {
-                // If it is Athena (MoovieCatalog) or netmirror, use the VPS proxy instead of Cloudflare Worker
-                // because Cloudflare Worker IPs are blocked by netmirror/tv.imgcdn.kim!
-                const isAthena = s.providerName?.toLowerCase() === 'mooviecatalog' || 
-                                 s.providerName?.toLowerCase() === 'athena' ||
-                                 s.name?.toLowerCase() === 'mooviecatalog' ||
-                                 s.name?.toLowerCase() === 'athena' ||
-                                 s.url?.includes('imgcdn.kim') ||
-                                 s.url?.includes('netmirror');
-                
-                const base64Url = btoa(s.url).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-                const base64Headers = btoa(JSON.stringify(s.headers)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-                if (isAthena) {
-                    playUrl = `${HUB_BASE}/proxy?u=${base64Url}&h=${base64Headers}`
-                    await tryMount(playUrl)
-                } else {
-                    // VPS hub rewrites .m3u8 manifest so segments load through the proxy
-                    playUrl = `${HUB_BASE}/proxy?u=${base64Url}&h=${base64Headers}`
-                    await tryMount(playUrl)
-                }
-                }
-            } else {
-                playUrl = s.url
-                try {
-                    await tryMount(playUrl)
-                } catch (e) {
-                    if (s.proxyUrl && !forceDirect && shouldUseProxy(s)) {
-                        console.debug('[MoovieFrame] direct playback failed, falling back to proxy:', s.proxyUrl)
-                        await tryMount(s.proxyUrl)
-                    } else {
-                        throw e
-                    }
                 }
             }
             // Mount succeeded: clear any stale per-provider error (e.g. an
@@ -2897,7 +2823,7 @@ export default defineComponent({
 
                 const ctrl = new AbortController()
                 const timeout = setTimeout(() => ctrl.abort(), 12000)
-                const res = await fetch(`/api/stream/resolve?${query}`, { signal: ctrl.signal })
+                const res = await fetch(`${HUB_BASE}/api/stream/resolve?${query}`, { signal: ctrl.signal })
                 clearTimeout(timeout)
 
                 if (!res.ok) throw new Error(`HTTP ${res.status}`)
