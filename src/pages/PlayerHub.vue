@@ -66,7 +66,7 @@
                         <div v-if="!activeStreamUrl && !loading && !playbackError && !searched" class="player-frame__overlay">
                             <p class="eyebrow">Search a title</p>
                             <h3>Hub Player</h3>
-                            <p class="meta">hahaevilcraft.site</p>
+                            <p class="meta">watchable-virid.vercel.app</p>
                         </div>
 
                         <div v-if="!activeStreamUrl && !loading && searched && !playbackError && results.length === 0" class="player-frame__overlay">
@@ -175,8 +175,8 @@ export default defineComponent({
             // fetch — never wrap them through the hub again (double hops + 522s).
             const alreadyProxied = Boolean(
                 s.url?.startsWith(`${HUB_PROXY}?`) ||
-                s.url?.includes('cf-header-hahaevilcraft.site') ||
-                s.url?.startsWith('https://hahaevilcraft.site/proxy') ||
+                s.url?.startsWith('/api/stream/proxy?') ||
+                s.url?.includes('vercel.app/api/stream/proxy?') ||
                 /\.workers\.dev\/|\/v1\/proxy\?data=|\/proxy\?data=/.test(s.url || '')
             )
             if (!alreadyProxied && shouldUseProxy(s) && s.proxyUrl) return s.proxyUrl
@@ -203,7 +203,7 @@ export default defineComponent({
         let plyrInstance: Plyr | null = null
         let hlsInstance: any = null
 
-        const HUB_PROXY = 'https://hahaevilcraft.site/proxy'
+        const HUB_PROXY = '/api/stream/proxy'
 
         const loadHlsJs = (() => {
             let promise: Promise<void> | null = null

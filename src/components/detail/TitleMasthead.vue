@@ -481,7 +481,7 @@ export default defineComponent({
         const extractDirectDownloadUrl = (rawUrl: string): string => {
             if (!rawUrl) return '';
             try {
-                const fullUrl = rawUrl.startsWith('/') ? `https://hahaevilcraft.site${rawUrl}` : rawUrl;
+                const fullUrl = rawUrl.startsWith('/') ? `https://watchable-virid.vercel.app${rawUrl}` : rawUrl;
                 const u = new URL(fullUrl);
                 const embedded = u.searchParams.get('link') || u.searchParams.get('url') || u.searchParams.get('file') || u.searchParams.get('download');
                 if (embedded && /^https?:\/\//i.test(embedded)) {
@@ -489,7 +489,7 @@ export default defineComponent({
                 }
                 return fullUrl;
             } catch (e) {
-                return rawUrl.startsWith('/') ? `https://hahaevilcraft.site${rawUrl}` : rawUrl;
+                return rawUrl.startsWith('/') ? `https://watchable-virid.vercel.app${rawUrl}` : rawUrl;
             }
         };
 
@@ -809,8 +809,7 @@ export default defineComponent({
                     }
                 } catch (e) {}
 
-                const uB64 = btoa(unescape(encodeURIComponent(targetUrl))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-                const proxyUrl = `https://hahaevilcraft.site/proxy?u=${uB64}&_size=1&_t=${Date.now()}`;
+                const proxyUrl = `/api/stream/proxy?url=${encodeURIComponent(targetUrl)}&_size=1&_t=${Date.now()}`;
                 
                 let res = await fetch(proxyUrl, { headers: { Range: 'bytes=0-0' }, cache: 'no-store', signal: AbortSignal.timeout(5000) }).catch(() => null);
                 if (!res || !res.ok) {

@@ -163,7 +163,7 @@ export function warmMooviePlayerAssets() {
     try {
         const hints = document.createElement('link');
         hints.rel = 'preconnect';
-        hints.href = 'https://hahaevilcraft.site';
+        hints.href = 'https://watchable-virid.vercel.app';
         document.head.appendChild(hints);
     } catch {}
     return loadHlsJs().catch(() => {});

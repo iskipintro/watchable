@@ -556,9 +556,9 @@ import { startProgressTracking } from '@/composables/user/useProgress'
 import { getSyncClient } from '../../lib/syncClient'
 import { vpsProxyUrl } from '@/lib/streaming/vpsProxy'
 
-const HUB_BASE = 'https://hahaevilcraft.site'
-const STREAMSCRAPER_HUB = 'https://hahaevilcraft.site'
-const OPENSUBTITLES_API = `${HUB_BASE}/api/subtitles`
+const HUB_BASE = ''
+const STREAMSCRAPER_HUB = ''
+const OPENSUBTITLES_API = `/api/subtitles`
 
 interface LanguageVariant {
     language: string
@@ -1730,7 +1730,7 @@ export default defineComponent({
             }
             const HlsCtor = (window as any).Hls
             // Use HLS.js if the URL looks like m3u8 OR the caller explicitly says it's HLS
-            // (proxy URLs like hahaevilcraft.site/proxy?id=... carry no extension)
+            // (proxy URLs like /api/stream/proxy?url=... carry no extension)
             const isHls = forceHls || url.includes('.m3u8') || url.includes('m3u8')
 
             const video = videoRef.value
@@ -2571,8 +2571,7 @@ export default defineComponent({
             }
             lastTriedStream.value = s
             selectedServer.value = s.providerName || ''
-            // Relay every stream through the VPS proxy. New scrapers such as
-            // Itachi/Luffy resolve entirely through hahaevilcraft.site.
+            // Relay stream through the Vercel Edge proxy.
             const sourceUrl = s.url || s.proxyUrl
             const playUrl = vpsProxyUrl(sourceUrl, s.headers)
             const isHlsStream = s.type === 'm3u8' || s.type === 'hls'
@@ -2586,7 +2585,7 @@ export default defineComponent({
                 await tryMount(playUrl)
             } catch (e) {
                 if (s.proxyUrl && s.proxyUrl !== sourceUrl) {
-                    console.debug('[MoovieFrame] VPS stream proxy failed, trying provider proxy fallback')
+                    console.debug('[MoovieFrame] stream proxy failed, trying provider proxy fallback')
                     await tryMount(vpsProxyUrl(s.proxyUrl, s.headers))
                 } else {
                     throw e
@@ -2689,13 +2688,7 @@ export default defineComponent({
             if (needsProxy) {
                 // Race proxy vs direct — first to succeed wins. This avoids sequential
                 // 15s+15s worst case; subtitle appears as fast as the faster path.
-                let proxyUrl: string
-                try {
-                    const u = btoa(subUrl).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-                    proxyUrl = `${HUB_BASE}/proxy?u=${u}`
-                } catch {
-                    proxyUrl = `${HUB_BASE}/proxy?u=${encodeURIComponent(subUrl)}`
-                }
+                const proxyUrl = `/api/stream/proxy?url=${encodeURIComponent(subUrl)}`
 
                 // Race: proxy (8s) vs direct (8s) — first non-null result wins
                 const result = await (Promise as any).any([

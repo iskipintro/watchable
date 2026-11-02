@@ -1,6 +1,9 @@
 import { ref } from 'vue'
 
-const HUB_BASE = 'https://hahaevilcraft.site'
+const HUB_BASE =
+  typeof window !== 'undefined' && window.location.origin
+    ? window.location.origin
+    : 'https://watchable-virid.vercel.app'
 
 export interface HubStream {
   name: string

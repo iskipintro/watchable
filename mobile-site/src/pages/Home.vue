@@ -204,13 +204,13 @@ watch(showDownloadModal, (v) => {
 const extractDirectDownloadUrl = (rawUrl: string): string => {
     if (!rawUrl) return '';
     try {
-        const fullUrl = rawUrl.startsWith('/') ? `https://hahaevilcraft.site${rawUrl}` : rawUrl;
+        const fullUrl = rawUrl.startsWith('/') ? `https://watchable-virid.vercel.app${rawUrl}` : rawUrl;
         const u = new URL(fullUrl);
         const embedded = u.searchParams.get('link') || u.searchParams.get('url') || u.searchParams.get('file') || u.searchParams.get('download');
         if (embedded && /^https?:\/\//i.test(embedded)) return embedded;
         return fullUrl;
     } catch (e) {
-        return rawUrl.startsWith('/') ? `https://hahaevilcraft.site${rawUrl}` : rawUrl;
+        return rawUrl.startsWith('/') ? `https://watchable-virid.vercel.app${rawUrl}` : rawUrl;
     }
 };
 

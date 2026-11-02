@@ -50,12 +50,53 @@ export async function OPTIONS() {
   });
 }
 
+function decodeBase64Safe(val: string): string {
+  try {
+    const b64 = val.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = b64.length % 4;
+    const padded = pad ? b64 + "=".repeat(4 - pad) : b64;
+    if (typeof atob === "function") {
+      const bin = atob(padded);
+      const bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    }
+  } catch {}
+  return "";
+}
+
 async function handleProxy(request: Request): Promise<Response> {
   const fullUrl = new URL(request.url, "http://localhost");
   const { searchParams } = fullUrl;
-  const targetUrl = searchParams.get("url");
-  const referer = searchParams.get("referer") || "https://nextgencloudfabric.com/";
-  const origin = searchParams.get("origin") || "https://nextgencloudfabric.com";
+  let targetUrl = searchParams.get("url");
+
+  let parsedHeaders: Record<string, string> = {};
+  const hParam = searchParams.get("h");
+  if (hParam) {
+    try {
+      const decodedH = decodeBase64Safe(hParam);
+      if (decodedH) {
+        parsedHeaders = JSON.parse(decodedH);
+      }
+    } catch {}
+  }
+
+  if (!targetUrl && searchParams.get("u")) {
+    const decodedU = decodeBase64Safe(searchParams.get("u")!);
+    if (decodedU && /^https?:\/\//i.test(decodedU)) {
+      targetUrl = decodedU;
+    }
+  }
+
+  const referer =
+    searchParams.get("referer") ||
+    parsedHeaders["Referer"] ||
+    parsedHeaders["referer"] ||
+    "https://nextgencloudfabric.com/";
+  const origin =
+    searchParams.get("origin") ||
+    parsedHeaders["Origin"] ||
+    parsedHeaders["origin"] ||
+    "https://nextgencloudfabric.com";
 
   if (!targetUrl) {
     return new Response("Missing url parameter", { status: 400 });
@@ -68,6 +109,13 @@ async function handleProxy(request: Request): Promise<Response> {
       Referer: referer,
       Origin: origin,
     };
+
+    for (const [k, v] of Object.entries(parsedHeaders)) {
+      const lk = k.toLowerCase();
+      if (lk !== "referer" && lk !== "origin" && lk !== "user-agent" && typeof v === "string" && v) {
+        upstreamHeaders[k] = v;
+      }
+    }
 
     const rangeHeader = request.headers.get("range");
     if (rangeHeader) {
@@ -150,6 +198,8 @@ async function handleProxy(request: Request): Promise<Response> {
         lines = sortedLines;
       }
 
+      const hQuery = hParam ? `&h=${encodeURIComponent(hParam)}` : "";
+
       // Rewrite each URI in the playlist
       const rewrittenLines = lines.map((line) => {
         const trimmed = line.trim();
@@ -165,7 +215,7 @@ async function handleProxy(request: Request): Promise<Response> {
                 : `${baseUrl}${p1}`;
               const proxied = `/api/stream/proxy?url=${encodeURIComponent(
                 fullUri
-              )}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
+              )}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}${hQuery}`;
               return `URI="${proxied}"`;
             });
           }
@@ -183,7 +233,7 @@ async function handleProxy(request: Request): Promise<Response> {
 
         return `/api/stream/proxy?url=${encodeURIComponent(
           fullSegmentUrl
-        )}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}`;
+        )}&referer=${encodeURIComponent(referer)}&origin=${encodeURIComponent(origin)}${hQuery}`;
       });
 
       return new Response(rewrittenLines.join("\n"), {

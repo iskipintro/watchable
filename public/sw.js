@@ -8,7 +8,7 @@ const PRECACHE_ASSETS = [
 
 const IMAGE_HOSTS = [
   'image.tmdb.org',
-  'hahaevilcraft.site',
+  'watchable-virid.vercel.app',
   'aoneroom.com',
   'hakunaymatata.com',
   'watch21.shop',

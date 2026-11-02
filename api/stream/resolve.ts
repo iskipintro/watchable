@@ -4,59 +4,81 @@ import fs from "fs";
 import path from "path";
 import { execFile } from "child_process";
 
-const VPS_ORIGIN = "https://hahaevilcraft.site";
-
-function toBase64Url(value: string): string {
-  return Buffer.from(value, "utf8").toString("base64url");
-}
+const VERCEL_STREAM_PROXY = "/api/stream/proxy";
 
 function isAbsoluteHttpUrl(value: string): boolean {
   return /^https?:\/\//i.test(value);
 }
 
-function vpsProxyUrl(rawUrl: string, headers?: Record<string, string>): string {
+function vercelProxyUrl(rawUrl: string, headers?: Record<string, string>): string {
   if (!rawUrl) return rawUrl;
 
-  if (rawUrl.startsWith(`${VPS_ORIGIN}/proxy?`)) return rawUrl;
-
-  if (rawUrl.startsWith("/proxy?") || rawUrl.startsWith("/api/stream/proxy?")) {
-    const parsed = new URL(rawUrl, VPS_ORIGIN);
-    const target = parsed.searchParams.get("url");
-    if (!target) return `${VPS_ORIGIN}${rawUrl}`;
-
-    const merged: Record<string, string> = { ...(headers || {}) };
-    const referer = parsed.searchParams.get("referer");
-    const origin = parsed.searchParams.get("origin");
-    if (referer && !merged.Referer && !merged.referer) merged.Referer = referer;
-    if (origin && !merged.Origin && !merged.origin) merged.Origin = origin;
-
-    return vpsProxyUrl(target, merged);
+  // Already routed through Vercel stream proxy: return as-is
+  if (rawUrl.startsWith("/api/stream/proxy?") || rawUrl.includes("vercel.app/api/stream/proxy?")) {
+    return rawUrl;
   }
 
-  if (rawUrl.startsWith(`${VPS_ORIGIN}/api/stream/proxy?`)) {
-    return vpsProxyUrl(rawUrl.slice(VPS_ORIGIN.length), headers);
+  // If pointing to old VPS proxy, extract target URL and headers
+  if (rawUrl.includes("hahaevilcraft.site/proxy") || rawUrl.startsWith("/proxy?")) {
+    try {
+      const parsed = new URL(rawUrl, "https://watchable-virid.vercel.app");
+      const urlParam = parsed.searchParams.get("url");
+      const uParam = parsed.searchParams.get("u");
+      let extractedUrl = urlParam || "";
+      let mergedHeaders: Record<string, string> = { ...(headers || {}) };
+
+      if (!extractedUrl && uParam) {
+        const b64 = uParam.replace(/-/g, "+").replace(/_/g, "/");
+        extractedUrl = Buffer.from(b64, "base64").toString("utf8");
+      }
+      const hParam = parsed.searchParams.get("h");
+      if (hParam) {
+        try {
+          const b64 = hParam.replace(/-/g, "+").replace(/_/g, "/");
+          const parsedH = JSON.parse(Buffer.from(b64, "base64").toString("utf8"));
+          mergedHeaders = { ...parsedH, ...mergedHeaders };
+        } catch {}
+      }
+      if (extractedUrl) {
+        return vercelProxyUrl(extractedUrl, mergedHeaders);
+      }
+    } catch {}
   }
 
   if (!isAbsoluteHttpUrl(rawUrl)) return rawUrl;
 
-  const u = toBase64Url(rawUrl);
-  const headerEntries = headers
-    ? Object.entries(headers).filter(([, value]) => typeof value === "string" && value)
-    : [];
-  if (!headerEntries.length) return `${VPS_ORIGIN}/proxy?u=${u}`;
+  const params = new URLSearchParams();
+  params.set("url", rawUrl);
 
-  const h = toBase64Url(JSON.stringify(Object.fromEntries(headerEntries)));
-  return `${VPS_ORIGIN}/proxy?u=${u}&h=${h}`;
+  const referer = headers?.Referer || headers?.referer;
+  const origin = headers?.Origin || headers?.origin;
+  if (referer) params.set("referer", referer);
+  if (origin) params.set("origin", origin);
+
+  const extraHeaders: Record<string, string> = {};
+  if (headers) {
+    for (const [k, v] of Object.entries(headers)) {
+      const lk = k.toLowerCase();
+      if (lk !== "referer" && lk !== "origin" && lk !== "user-agent" && typeof v === "string" && v) {
+        extraHeaders[k] = v;
+      }
+    }
+  }
+  if (Object.keys(extraHeaders).length > 0) {
+    params.set("h", Buffer.from(JSON.stringify(extraHeaders)).toString("base64url"));
+  }
+
+  return `${VERCEL_STREAM_PROXY}?${params.toString()}`;
 }
 
-function routeStreamDataThroughVps(data: any): any {
+function routeStreamDataThroughVercel(data: any): any {
   if (!data || typeof data !== "object") return data;
 
   const baseHeaders =
     data.headers && typeof data.headers === "object" ? data.headers : undefined;
 
   if (typeof data.streamUrl === "string") {
-    data.streamUrl = vpsProxyUrl(data.streamUrl, baseHeaders);
+    data.streamUrl = vercelProxyUrl(data.streamUrl, baseHeaders);
   }
 
   if (Array.isArray(data.subtitles)) {
@@ -64,17 +86,17 @@ function routeStreamDataThroughVps(data: any): any {
       if (!sub || typeof sub !== "object") continue;
       const subHeaders =
         sub.headers && typeof sub.headers === "object" ? sub.headers : baseHeaders;
-      if (typeof sub.url === "string") sub.url = vpsProxyUrl(sub.url, subHeaders);
-      if (typeof sub.file === "string") sub.file = vpsProxyUrl(sub.file, subHeaders);
+      if (typeof sub.url === "string") sub.url = vercelProxyUrl(sub.url, subHeaders);
+      if (typeof sub.file === "string") sub.file = vercelProxyUrl(sub.file, subHeaders);
     }
   }
 
   return data;
 }
 
-function routeResultThroughVps(result: any): any {
+function routeResultThroughVercel(result: any): any {
   if (result && typeof result === "object" && result.data) {
-    routeStreamDataThroughVps(result.data);
+    routeStreamDataThroughVercel(result.data);
   }
   return result;
 }
@@ -2714,7 +2736,7 @@ async function handler(request, response) {
           }
         }
       }
-      const result2 = routeResultThroughVps(await handleResolve(searchParams));
+      const result2 = routeResultThroughVercel(await handleResolve(searchParams));
       response.setHeader("Content-Type", "application/json");
       response.setHeader("Access-Control-Allow-Origin", "*");
       response.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
@@ -2729,7 +2751,7 @@ async function handler(request, response) {
       }
     }
     const fullUrl = new URL(request.url, "http://localhost");
-    const result = routeResultThroughVps(await handleResolve(fullUrl.searchParams));
+    const result = routeResultThroughVercel(await handleResolve(fullUrl.searchParams));
     return new Response(JSON.stringify(result.data), {
       status: result.status,
       headers: {
